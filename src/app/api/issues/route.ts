@@ -6,7 +6,7 @@ import { runRuleEngine } from '@/lib/rule-engine';
 import { retrieveRelevantChunks } from '@/lib/retrieval';
 import { createAIService } from '@/lib/ai-service';
 import { generateWoId } from '@/lib/utils';
-import type { SensorReadingInput, OperatingEventInput, SensorRule, IssuePriority } from '@/types';
+import type { SensorReadingInput, OperatingEventInput, SensorRule, IssuePriority, EquipmentType } from '@/types';
 
 export async function GET(request: Request) {
   try {
@@ -199,7 +199,7 @@ export async function POST(request: Request) {
     ].join(' ');
 
     const retrievalResult = await retrieveRelevantChunks({
-      equipmentType: equipment.type,
+      equipmentType: equipment.type as EquipmentType,
       query: queryText,
       topK: 6,
     });
@@ -230,7 +230,7 @@ export async function POST(request: Request) {
       const aiInput = {
         equipment: {
           equipmentId: equipment.equipmentId,
-          type: equipment.type,
+          type: equipment.type as EquipmentType,
           model: equipment.model,
           location: equipment.location,
         },
