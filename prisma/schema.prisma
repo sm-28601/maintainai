@@ -1,0 +1,331 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// SQLite does not support enums — all enum-like fields use String
+// Values are validated at the application/type layer (see src/types/index.ts)
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  role         String   @default("TECHNICIAN") // Role: ADMIN | TECHNICIAN | VIEWER
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assignedIssues     Issue[]     @relation("AssignedIssues")
+  approvedWorkOrders WorkOrder[] @relation("ApprovedWorkOrders")
+  confirmedFindings  Finding[]   @relation("ConfirmedFindings")
+  auditLogs          AuditLog[]
+
+  @@map("users")
+}
+
+model Equipment {
+  id           String    @id @default(cuid())
+  equipmentId  String    @unique // e.g. PUMP-204
+  type         String    // EquipmentType
+  model        String
+  location     String
+  status       String    @default("OPERATIONAL") // EquipmentStatus
+  imageUrl     String?
+  installedAt  DateTime?
+  description  String?
+  manufacturer String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  issues             Issue[]
+  events             EquipmentEvent[]
+  maintenanceRecords MaintenanceRecord[]
+  sensorReadings     SensorReading[]
+  workOrders         WorkOrder[]
+
+  @@map("equipment")
+}
+
+model EquipmentEvent {
+  id          String   @id @default(cuid())
+  equipmentId String
+  description String
+  eventDate   DateTime
+  createdAt   DateTime @default(now())
+
+  equipment Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+
+  @@map("equipment_events")
+}
+
+model SensorRule {
+  id            String   @id @default(cuid())
+  equipmentType String   // EquipmentType
+  sensorName    String
+  operator      String   // >, >=, <, <=, ==, !=
+  threshold     Float
+  unit          String
+  severity      String   // ThresholdSeverity: NORMAL | WARNING | CRITICAL
+  description   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("sensor_rules")
+}
+
+model Issue {
+  id             String   @id @default(cuid())
+  equipmentId    String
+  title          String
+  description    String
+  startedAt      DateTime
+  isActive       Boolean  @default(true)
+  status         String   @default("OPEN")     // IssueStatus
+  priority       String   @default("MEDIUM")   // IssuePriority
+  assignedUserId String?
+  resolvedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  equipment       Equipment             @relation(fields: [equipmentId], references: [id])
+  assignedUser    User?                 @relation("AssignedIssues", fields: [assignedUserId], references: [id])
+  sensorReadings  IssueSensorReading[]
+  thresholdResults ThresholdResult[]
+  aiAnalyses      AIAnalysis[]
+  workOrders      WorkOrder[]
+  findings        Finding[]
+  evidence        Evidence[]
+  operatingEvents IssueOperatingEvent[]
+
+  @@map("issues")
+}
+
+model IssueOperatingEvent {
+  id          String   @id @default(cuid())
+  issueId     String
+  description String
+  eventDate   DateTime
+  createdAt   DateTime @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@map("issue_operating_events")
+}
+
+model IssueSensorReading {
+  id         String   @id @default(cuid())
+  issueId    String
+  sensorName String
+  value      Float
+  unit       String
+  timestamp  DateTime
+  notes      String?
+  isConflict Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@map("issue_sensor_readings")
+}
+
+model SensorReading {
+  id          String   @id @default(cuid())
+  equipmentId String
+  sensorName  String
+  value       Float
+  unit        String
+  timestamp   DateTime
+  createdAt   DateTime @default(now())
+
+  equipment Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+
+  @@map("sensor_readings")
+}
+
+model ThresholdResult {
+  id          String   @id @default(cuid())
+  issueId     String
+  sensorName  String
+  value       Float
+  unit        String
+  threshold   Float
+  operator    String
+  severity    String   // ThresholdSeverity
+  ruleId      String?
+  description String?
+  createdAt   DateTime @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@map("threshold_results")
+}
+
+model KnowledgeDocument {
+  id            String    @id @default(cuid())
+  name          String
+  equipmentType String?   // EquipmentType
+  docType       String    // DocumentType
+  filename      String
+  fileSize      Int?
+  status        String    @default("UPLOADING") // DocumentStatus
+  pageCount     Int?
+  errorMessage  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  chunks KnowledgeChunk[]
+
+  @@map("knowledge_documents")
+}
+
+model KnowledgeChunk {
+  id         String   @id @default(cuid())
+  documentId String
+  text       String
+  pageNumber Int?
+  section    String?
+  embedding  String?  // JSON serialized vector
+  chunkIndex Int
+  createdAt  DateTime @default(now())
+
+  document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("knowledge_chunks")
+}
+
+model AIAnalysis {
+  id                String   @id @default(cuid())
+  issueId           String
+  summary           String
+  observations      String   @default("[]") // JSON array
+  possibleCauses    String   @default("[]") // JSON array
+  confirmedFindings String   @default("[]") // JSON array
+  followUpQuestions String   @default("[]") // JSON array
+  inspectionSteps   String   @default("[]") // JSON array
+  priorityLevel     String
+  priorityReason    String
+  workOrderDraft    String?  // JSON object
+  rawResponse       String?
+  status            String   @default("COMPLETED")
+  errorMessage      String?
+  modelUsed         String?
+  retrievedChunkIds String   @default("[]") // JSON array
+  technicianAnswers String?  // JSON object
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  issue    Issue      @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  evidence Evidence[]
+
+  @@map("ai_analyses")
+}
+
+model Evidence {
+  id          String   @id @default(cuid())
+  issueId     String
+  analysisId  String?
+  type        String   // EvidenceType
+  title       String
+  excerpt     String?
+  pageNumber  Int?
+  section     String?
+  documentId  String?
+  sensorName  String?
+  sensorValue Float?
+  sensorUnit  String?
+  ruleDesc    String?
+  relevance   Float?
+  createdAt   DateTime @default(now())
+
+  issue    Issue      @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  analysis AIAnalysis? @relation(fields: [analysisId], references: [id])
+
+  @@map("evidence")
+}
+
+model WorkOrder {
+  id               String    @id @default(cuid())
+  woId             String    @unique // WO-1042
+  issueId          String
+  equipmentId      String
+  title            String
+  description      String
+  priority         String    // IssuePriority
+  status           String    @default("DRAFT") // WorkOrderStatus
+  inspectionSteps  String    @default("[]")    // JSON array
+  possibleCauses   String    @default("[]")    // JSON array
+  notes            String?
+  technicianNotes  String?
+  approvedByUserId String?
+  approvedAt       DateTime?
+  rejectedAt       DateTime?
+  rejectionReason  String?
+  completedAt      DateTime?
+  aiDraftJson      String?   // JSON — original AI draft preserved
+  editHistory      String    @default("[]") // JSON array
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  issue      Issue     @relation(fields: [issueId], references: [id])
+  equipment  Equipment @relation(fields: [equipmentId], references: [id])
+  approvedBy User?     @relation("ApprovedWorkOrders", fields: [approvedByUserId], references: [id])
+
+  @@map("work_orders")
+}
+
+model MaintenanceRecord {
+  id          String    @id @default(cuid())
+  equipmentId String
+  type        String    // Inspection, Repair, Replacement, PM
+  title       String
+  description String
+  status      String    @default("COMPLETED")
+  priority    String?   // IssuePriority
+  performedAt DateTime
+  performedBy String?
+  notes       String?
+  createdAt   DateTime  @default(now())
+
+  equipment Equipment @relation(fields: [equipmentId], references: [id])
+
+  @@map("maintenance_records")
+}
+
+model Finding {
+  id                String    @id @default(cuid())
+  issueId           String
+  analysisId        String?
+  description       String
+  status            String    @default("POSSIBLE") // FindingStatus
+  confirmedByUserId String?
+  confirmedAt       DateTime?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  issue       Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  confirmedBy User? @relation("ConfirmedFindings", fields: [confirmedByUserId], references: [id])
+
+  @@map("findings")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  timestamp  DateTime @default(now())
+  userId     String?
+  action     String   // AuditAction
+  entityType String
+  entityId   String?
+  details    String?  // JSON object
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
